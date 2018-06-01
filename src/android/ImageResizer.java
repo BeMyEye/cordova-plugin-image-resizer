@@ -3,6 +3,7 @@ package info.protonet.imageresizer;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.Environment;
 import android.util.Base64;
 import android.util.Log;
@@ -35,14 +36,25 @@ public class ImageResizer extends CordovaPlugin {
     private boolean fit = false;
 
     public boolean execute(String action, JSONArray args, CallbackContext callbackContext) throws JSONException {
-        try {
-            this.callbackContext = callbackContext;
+        this.callbackContext = callbackContext;
 
+        if (action.equals("resize")) {
+            new ResizeTask().execute(args);
+            return true;
+        } else {
+            callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR));
+            return false;
+        }
+    }
+
+    class ResizeTask extends AsyncTask<JSONArray, String, String> {
+        @Override
+        protected String doInBackground(JSONArray[] params) {
+            JSONArray args = params[0];
             boolean isFileUri = false;
 
-            if (action.equals("resize")) {
-                checkParameters(args);
-
+            checkParameters(args);
+            try {
                 // get the arguments
                 JSONObject jsonObject = args.getJSONObject(0);
                 uri = jsonObject.getString("uri");
@@ -69,9 +81,8 @@ public class ImageResizer extends CordovaPlugin {
                     bitmap = loadScaledBitmapFromUri(uri, width, height);
 
                 } else {
-                    bitmap = this.loadBase64ScaledBitmapFromUri(uri, width, height, fit);
+                    bitmap = loadBase64ScaledBitmapFromUri(uri, width, height, fit);
                 }
-
 
                 String response;
 
@@ -80,22 +91,20 @@ public class ImageResizer extends CordovaPlugin {
                     Uri scaledFile = saveFile(bitmap);
                     response = scaledFile.toString();
                 } else {
-                    response = this.getStringImage(bitmap, quality);
+                    response = getStringImage(bitmap, quality);
                 }
 
                 bitmap = null;
 
                 callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, response));
-                return true;
-            } else {
-                callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR));
-                return false;
+
+            } catch (JSONException e) {
+                Log.e("Protonet", "JSON Exception during the Image Resizer Plugin... :(");
+            } finally {
+                return null;
             }
-        } catch (JSONException e) {
-            Log.e("Protonet", "JSON Exception during the Image Resizer Plugin... :(");
+
         }
-        callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR));
-        return false;
     }
 
     public String getStringImage(Bitmap bmp, int quality) {
