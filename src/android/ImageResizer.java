@@ -2,6 +2,8 @@ package info.protonet.imageresizer;
 
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Matrix;
+import android.support.media.ExifInterface;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Environment;
@@ -16,6 +18,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -41,7 +44,11 @@ public class ImageResizer extends CordovaPlugin {
         if (action.equals("resize")) {
             new ResizeTask().execute(args);
             return true;
-        } else {
+        } else if(action.equals("rotateFromExif")) {
+            new RotateFromExifTask().execute(args);
+            return true;
+        }
+        else {
             callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR));
             return false;
         }
@@ -54,12 +61,19 @@ public class ImageResizer extends CordovaPlugin {
             boolean isFileUri = false;
 
             checkParameters(args);
+
             try {
                 // get the arguments
                 JSONObject jsonObject = args.getJSONObject(0);
+
                 uri = jsonObject.getString("uri");
 
-                isFileUri = !uri.startsWith("data") ? true : false;
+                isFileUri = !uri.startsWith("data");
+
+                int exifRotation = 0;
+                if(jsonObject.getBoolean("exifRotation")){
+                    exifRotation = getExifRotationFromUri(uri);
+                }
 
                 folderName = null;
                 if (jsonObject.has("folderName")) {
@@ -79,14 +93,88 @@ public class ImageResizer extends CordovaPlugin {
                 // load the image from uri
                 if (isFileUri) {
                     bitmap = loadScaledBitmapFromUri(uri, width, height);
-
                 } else {
                     bitmap = loadBase64ScaledBitmapFromUri(uri, width, height, fit);
+                }
+
+                if(jsonObject.getBoolean("exifRotation")){
+                    bitmap = rotateBitmap(bitmap, exifRotation);
                 }
 
                 String response;
 
                 // save the image as jpeg on the device
+                if (!base64) {
+                    Uri scaledFile = saveFile(bitmap);
+                    response = scaledFile.toString();
+                } else {
+                    response = getStringImage(bitmap, quality);
+                }
+
+                bitmap = null;
+
+                callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, response));
+
+            } catch (JSONException e) {
+                Log.e("Protonet", "JSON Exception during the Image Resizer Plugin... :(");
+            } finally {
+                return null;
+            }
+
+        }
+    }
+
+    class RotateFromExifTask extends AsyncTask<JSONArray, String, String> {
+        @Override
+        protected String doInBackground(JSONArray[] params) {
+            JSONArray args = params[0];
+            boolean isFileUri = false;
+
+            checkParameters(args);
+
+            try {
+                // get the arguments
+                JSONObject jsonObject = args.getJSONObject(0);
+
+                uri = jsonObject.getString("uri");
+
+                isFileUri = !uri.startsWith("data");
+
+                int exifRotation = getExifRotationFromUri(uri);
+
+                Bitmap bitmap;
+                // load the image from uri
+                if (isFileUri) {
+                    BitmapFactory.Options options = new BitmapFactory.Options();
+                    options.inJustDecodeBounds = true;
+                    BitmapFactory.decodeStream(FileHelper.getInputStreamFromUriString(uri, cordova), null, options);
+
+                    options.inJustDecodeBounds = false;
+                    options.inSampleSize = calculateSampleSize(options.outWidth, options.outHeight, width, height);
+                    bitmap = BitmapFactory.decodeStream(FileHelper.getInputStreamFromUriString(uri, cordova), null, options);
+
+                } else {
+                    String pureBase64Encoded = uri.substring(uri.indexOf(",") + 1);
+                    byte[] decodedBytes = Base64.decode(pureBase64Encoded, Base64.DEFAULT);
+
+                    bitmap = BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.length);
+                }
+
+                bitmap = rotateBitmap(bitmap, exifRotation);
+
+                String response;
+
+                folderName = null;
+                if (jsonObject.has("folderName")) {
+                    folderName = jsonObject.getString("folderName");
+                }
+                fileName = null;
+                if (jsonObject.has("fileName")) {
+                    fileName = jsonObject.getString("fileName");
+                }
+                base64 = jsonObject.optBoolean("base64", false);
+                quality = jsonObject.optInt("quality", 85);
+
                 if (!base64) {
                     Uri scaledFile = saveFile(bitmap);
                     response = scaledFile.toString();
@@ -177,6 +265,69 @@ public class ImageResizer extends CordovaPlugin {
             Log.e("Protonet", e.toString());
         }
         return null;
+    }
+
+    public static int getExifRotationFromUri(String uriString){
+        ExifInterface exif = null;
+        try {
+            if(!uriString.startsWith("data")){
+                exif = new ExifInterface(uriString);
+            }else {
+                String pureBase64Encoded = uriString.substring(uriString.indexOf(",") + 1);
+                byte[] decodedBytes = Base64.decode(pureBase64Encoded, Base64.DEFAULT);
+                exif = new ExifInterface(new ByteArrayInputStream(decodedBytes));
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        int orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_UNDEFINED);
+
+        return orientation;
+    }
+
+    public static Bitmap rotateBitmap(Bitmap bitmap, int orientation) {
+
+        Matrix matrix = new Matrix();
+        switch (orientation) {
+            case ExifInterface.ORIENTATION_NORMAL:
+                return bitmap;
+            case ExifInterface.ORIENTATION_FLIP_HORIZONTAL:
+                matrix.setScale(-1, 1);
+                break;
+            case ExifInterface.ORIENTATION_ROTATE_180:
+                matrix.setRotate(180);
+                break;
+            case ExifInterface.ORIENTATION_FLIP_VERTICAL:
+                matrix.setRotate(180);
+                matrix.postScale(-1, 1);
+                break;
+            case ExifInterface.ORIENTATION_TRANSPOSE:
+                matrix.setRotate(90);
+                matrix.postScale(-1, 1);
+                break;
+            case ExifInterface.ORIENTATION_ROTATE_90:
+                matrix.setRotate(90);
+                break;
+            case ExifInterface.ORIENTATION_TRANSVERSE:
+                matrix.setRotate(-90);
+                matrix.postScale(-1, 1);
+                break;
+            case ExifInterface.ORIENTATION_ROTATE_270:
+                matrix.setRotate(-90);
+                break;
+            default:
+                return bitmap;
+        }
+        try {
+            Bitmap bmRotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
+            bitmap.recycle();
+            return bmRotated;
+        }
+        catch (OutOfMemoryError e) {
+            e.printStackTrace();
+            return null;
+        }
     }
 
     private Uri saveFile(Bitmap bitmap) {
