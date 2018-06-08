@@ -7,6 +7,7 @@ import android.support.media.ExifInterface;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Environment;
+import android.telecom.Call;
 import android.util.Base64;
 import android.util.Log;
 
@@ -25,9 +26,10 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 
+import bolts.Task;
+
 public class ImageResizer extends CordovaPlugin {
     private static final int ARGUMENT_NUMBER = 1;
-    public CallbackContext callbackContext;
 
     private String uri;
     private String folderName;
@@ -38,14 +40,23 @@ public class ImageResizer extends CordovaPlugin {
     private boolean base64 = false;
     private boolean fit = false;
 
-    public boolean execute(String action, JSONArray args, CallbackContext callbackContext) throws JSONException {
-        this.callbackContext = callbackContext;
+    private static class TaskParams{
+        JSONArray args;
+        CallbackContext callbackContext;
 
+        TaskParams(JSONArray args, CallbackContext callbackContext){
+            this.args = args;
+            this.callbackContext = callbackContext;
+        }
+    }
+
+    public boolean execute(String action, JSONArray args, CallbackContext callbackContext) throws JSONException {
+        TaskParams params = new TaskParams(args, callbackContext);
         if (action.equals("resize")) {
-            new ResizeTask().execute(args);
+            new ResizeTask().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, params);
             return true;
         } else if(action.equals("rotateFromExif")) {
-            new RotateFromExifTask().execute(args);
+            new RotateFromExifTask().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, params);
             return true;
         }
         else {
@@ -54,13 +65,15 @@ public class ImageResizer extends CordovaPlugin {
         }
     }
 
-    class ResizeTask extends AsyncTask<JSONArray, String, String> {
+    class ResizeTask extends AsyncTask<TaskParams, String, String> {
         @Override
-        protected String doInBackground(JSONArray[] params) {
-            JSONArray args = params[0];
+        protected String doInBackground(TaskParams[] params) {
+            TaskParams currentParams = params[0];
+            JSONArray args = currentParams.args;
+            CallbackContext callbackContext = currentParams.callbackContext;
             boolean isFileUri = false;
 
-            checkParameters(args);
+            checkParameters(args, callbackContext);
 
             try {
                 // get the arguments
@@ -71,7 +84,7 @@ public class ImageResizer extends CordovaPlugin {
                 isFileUri = !uri.startsWith("data");
 
                 int exifRotation = 0;
-                if(jsonObject.getBoolean("exifRotation")){
+                if(jsonObject.has("exifRotation") && jsonObject.getBoolean("exifRotation")){
                     exifRotation = getExifRotationFromUri(uri);
                 }
 
@@ -97,7 +110,7 @@ public class ImageResizer extends CordovaPlugin {
                     bitmap = loadBase64ScaledBitmapFromUri(uri, width, height, fit);
                 }
 
-                if(jsonObject.getBoolean("exifRotation")){
+                if(jsonObject.has("exifRotation") && jsonObject.getBoolean("exifRotation")){
                     bitmap = rotateBitmap(bitmap, exifRotation);
                 }
 
@@ -116,6 +129,7 @@ public class ImageResizer extends CordovaPlugin {
                 callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, response));
 
             } catch (JSONException e) {
+                callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR));
                 Log.e("Protonet", "JSON Exception during the Image Resizer Plugin... :(");
             } finally {
                 return null;
@@ -124,13 +138,15 @@ public class ImageResizer extends CordovaPlugin {
         }
     }
 
-    class RotateFromExifTask extends AsyncTask<JSONArray, String, String> {
+    class RotateFromExifTask extends AsyncTask<TaskParams, String, String> {
         @Override
-        protected String doInBackground(JSONArray[] params) {
-            JSONArray args = params[0];
+        protected String doInBackground(TaskParams[] params) {
+            TaskParams currentParams = params[0];
+            JSONArray args = currentParams.args;
+            CallbackContext callbackContext = currentParams.callbackContext;
             boolean isFileUri = false;
 
-            checkParameters(args);
+            checkParameters(args, callbackContext);
 
             try {
                 // get the arguments
@@ -183,10 +199,10 @@ public class ImageResizer extends CordovaPlugin {
                 }
 
                 bitmap = null;
-
                 callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, response));
 
             } catch (JSONException e) {
+                callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR));
                 Log.e("Protonet", "JSON Exception during the Image Resizer Plugin... :(");
             } finally {
                 return null;
@@ -433,7 +449,7 @@ public class ImageResizer extends CordovaPlugin {
         return retval;
     }
 
-    private boolean checkParameters(JSONArray args) {
+    private boolean checkParameters(JSONArray args, CallbackContext callbackContext) {
         if (args.length() != ARGUMENT_NUMBER) {
             callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.INVALID_ACTION));
             return false;
