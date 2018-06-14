@@ -1,4 +1,4 @@
-package info.protonet.imageresizer;
+package cordova-plugin-image-resizer;
 
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
