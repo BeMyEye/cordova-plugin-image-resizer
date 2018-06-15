@@ -1,4 +1,4 @@
-package cordova-plugin-image-resizer;
+package com.cordova.image.resizer;
 
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
