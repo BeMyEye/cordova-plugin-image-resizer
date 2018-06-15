@@ -1,4 +1,4 @@
-package com.cordova.ImageResizer;
+package com.cordova.imageresizer;
 
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
