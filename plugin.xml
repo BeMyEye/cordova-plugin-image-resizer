@@ -17,7 +17,7 @@
   <platform name="android">
     <config-file target="res/xml/config.xml" parent="/*">
       <feature name="ImageResizer">
-        <param name="android-package" value="cordova-plugin-image-resizer.ImageResizer"/>
+        <param name="android-package" value="com.cordova.ImageResizer"/>
       </feature>
     </config-file>
     <config-file target="AndroidManifest.xml" parent="/*">
