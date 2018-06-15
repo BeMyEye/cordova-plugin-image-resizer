@@ -105,8 +105,7 @@ static NSInteger count = 0;
         if (asBase64) {
             NSData *imageBase64 = [imageData base64EncodedDataWithOptions:NSDataBase64Encoding64CharacterLineLength];
             NSString *imageBase64String = [[NSString alloc] initWithData:imageBase64 encoding:NSUTF8StringEncoding];
-            NSString *imageBase64URL = [NSString stringWithFormat:@"%@%@", @"data:image/jpeg;base64,", imageBase64String];
-            result = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:imageBase64URL];
+            result = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:imageBase64String];
         }
         else if (![imageData writeToFile:imagePath atomically:NO])
         {
