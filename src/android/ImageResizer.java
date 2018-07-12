@@ -129,8 +129,10 @@ public class ImageResizer extends CordovaPlugin {
                 callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, response));
 
             } catch (JSONException e) {
-                callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR));
-                Log.e("Protonet", "JSON Exception during the Image Resizer Plugin... :(");
+                callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR,
+                        "JSON Exception during ResizeTask : " + e.getMessage()));
+                Log.e("Protonet", "JSON Exception during ResizeTask.");
+
             } finally {
                 return null;
             }
@@ -202,8 +204,9 @@ public class ImageResizer extends CordovaPlugin {
                 callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, response));
 
             } catch (JSONException e) {
-                callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR));
-                Log.e("Protonet", "JSON Exception during the Image Resizer Plugin... :(");
+                callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR,
+                        "JSON Exception during RotateFromExifTask : " + e.getMessage()));
+                Log.e("Protonet", "JSON Exception during RotateFromExifTask");
             } finally {
                 return null;
             }
@@ -222,37 +225,30 @@ public class ImageResizer extends CordovaPlugin {
     }
 
     private Bitmap loadBase64ScaledBitmapFromUri(String uriString, int width, int height, boolean fit) {
-        try {
+        String pureBase64Encoded = uriString.substring(uriString.indexOf(",") + 1);
+        byte[] decodedBytes = Base64.decode(pureBase64Encoded, Base64.DEFAULT);
 
-            String pureBase64Encoded = uriString.substring(uriString.indexOf(",") + 1);
-            byte[] decodedBytes = Base64.decode(pureBase64Encoded, Base64.DEFAULT);
+        Bitmap decodedBitmap = BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.length);
 
-            Bitmap decodedBitmap = BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.length);
+        int sourceWidth = decodedBitmap.getWidth();
+        int sourceHeight = decodedBitmap.getHeight();
 
-            int sourceWidth = decodedBitmap.getWidth();
-            int sourceHeight = decodedBitmap.getHeight();
+        float ratio = sourceWidth > sourceHeight ? ((float) width / sourceWidth) : ((float) height / sourceHeight);
 
-            float ratio = sourceWidth > sourceHeight ? ((float) width / sourceWidth) : ((float) height / sourceHeight);
+        int execWidth = width;
+        int execHeigth = height;
 
-            int execWidth = width;
-            int execHeigth = height;
-
-            if (fit) {
-                execWidth = Math.round(ratio * sourceWidth);
-                execHeigth = Math.round(ratio * sourceHeight);
-            }
-
-            Bitmap scaled = Bitmap.createScaledBitmap(decodedBitmap, execWidth, execHeigth, true);
-
-            decodedBytes = null;
-            decodedBitmap = null;
-
-            return scaled;
-
-        } catch (Exception e) {
-            Log.e("Protonet", e.toString());
+        if (fit) {
+            execWidth = Math.round(ratio * sourceWidth);
+            execHeigth = Math.round(ratio * sourceHeight);
         }
-        return null;
+
+        Bitmap scaled = Bitmap.createScaledBitmap(decodedBitmap, execWidth, execHeigth, true);
+
+        decodedBytes = null;
+        decodedBitmap = null;
+
+        return scaled;
     }
 
     /**
@@ -260,44 +256,35 @@ public class ImageResizer extends CordovaPlugin {
      *
      * @params uri the URI who points to the image
      **/
-    private Bitmap loadScaledBitmapFromUri(String uriString, int width, int height) {
-        try {
-            BitmapFactory.Options options = new BitmapFactory.Options();
-            options.inJustDecodeBounds = true;
-            BitmapFactory.decodeStream(FileHelper.getInputStreamFromUriString(uriString, cordova), null, options);
+    private Bitmap loadScaledBitmapFromUri(String uriString, int width, int height) throws IOException {
 
-            //calc aspect ratio
-            int[] retval = calculateAspectRatio(options.outWidth, options.outHeight);
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inJustDecodeBounds = true;
+        BitmapFactory.decodeStream(FileHelper.getInputStreamFromUriString(uriString, cordova), null, options);
 
-            options.inJustDecodeBounds = false;
-            options.inSampleSize = calculateSampleSize(options.outWidth, options.outHeight, width, height);
-            Bitmap unscaledBitmap = BitmapFactory.decodeStream(FileHelper.getInputStreamFromUriString(uriString, cordova), null, options);
-            return Bitmap.createScaledBitmap(unscaledBitmap, retval[0], retval[1], true);
-        } catch (FileNotFoundException e) {
-            Log.e("Protonet", "File not found. :(");
-        } catch (IOException e) {
-            Log.e("Protonet", "IO Exception :(");
-        } catch (Exception e) {
-            Log.e("Protonet", e.toString());
-        }
-        return null;
+        // calc aspect ratio
+        int[] retval = calculateAspectRatio(options.outWidth, options.outHeight);
+
+        options.inJustDecodeBounds = false;
+        options.inSampleSize = calculateSampleSize(options.outWidth, options.outHeight, width, height);
+        Bitmap unscaledBitmap = BitmapFactory.decodeStream(FileHelper.getInputStreamFromUriString(uriString, cordova),
+                null, options);
+
+        return Bitmap.createScaledBitmap(unscaledBitmap, retval[0], retval[1], true);
     }
 
-    public static int getExifRotationFromUri(String uriString){
+    public static int getExifRotationFromUri(String uriString) throws IOException {
         ExifInterface exif = null;
-        try {
-            if(!uriString.startsWith("data")){
-                exif = new ExifInterface(uriString);
-            }else {
-                String pureBase64Encoded = uriString.substring(uriString.indexOf(",") + 1);
-                byte[] decodedBytes = Base64.decode(pureBase64Encoded, Base64.DEFAULT);
-                exif = new ExifInterface(new ByteArrayInputStream(decodedBytes));
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
+
+        if (!uriString.startsWith("data")) {
+            exif = new ExifInterface(uriString);
+        } else {
+            String pureBase64Encoded = uriString.substring(uriString.indexOf(",") + 1);
+            byte[] decodedBytes = Base64.decode(pureBase64Encoded, Base64.DEFAULT);
+            exif = new ExifInterface(new ByteArrayInputStream(decodedBytes));
         }
-        int orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION,
-                ExifInterface.ORIENTATION_UNDEFINED);
+
+        int orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_UNDEFINED);
 
         return orientation;
     }
@@ -335,18 +322,13 @@ public class ImageResizer extends CordovaPlugin {
             default:
                 return bitmap;
         }
-        try {
-            Bitmap bmRotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
-            bitmap.recycle();
-            return bmRotated;
-        }
-        catch (OutOfMemoryError e) {
-            e.printStackTrace();
-            return null;
-        }
+
+        Bitmap bmRotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
+        bitmap.recycle();
+        return bmRotated;
     }
 
-    private Uri saveFile(Bitmap bitmap) {
+    private Uri saveFile(Bitmap bitmap) throws IOException {
         File folder = null;
         if (folderName == null) {
             folder = new File(this.getTempDirectoryPath());
@@ -367,15 +349,14 @@ public class ImageResizer extends CordovaPlugin {
                 fileName = System.currentTimeMillis() + ".jpg";
             }
             File file = new File(folder, fileName);
-            if (file.exists()) file.delete();
-            try {
-                FileOutputStream out = new FileOutputStream(file);
-                bitmap.compress(Bitmap.CompressFormat.JPEG, quality, out);
-                out.flush();
-                out.close();
-            } catch (Exception e) {
-                Log.e("Protonet", e.toString());
-            }
+            if (file.exists())
+                file.delete();
+
+            FileOutputStream out = new FileOutputStream(file);
+            bitmap.compress(Bitmap.CompressFormat.JPEG, quality, out);
+            out.flush();
+            out.close();
+
             return Uri.fromFile(file);
         }
         return null;
