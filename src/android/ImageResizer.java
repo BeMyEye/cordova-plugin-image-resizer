@@ -31,15 +31,6 @@ import bolts.Task;
 public class ImageResizer extends CordovaPlugin {
     private static final int ARGUMENT_NUMBER = 1;
 
-    private String uri;
-    private String folderName;
-    private String fileName;
-    private int quality;
-    private int width;
-    private int height;
-    private boolean base64 = false;
-    private boolean fit = false;
-
     private static class TaskParams{
         JSONArray args;
         CallbackContext callbackContext;
@@ -55,11 +46,7 @@ public class ImageResizer extends CordovaPlugin {
         if (action.equals("resize")) {
             new ResizeTask().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, params);
             return true;
-        } else if(action.equals("rotateFromExif")) {
-            new RotateFromExifTask().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, params);
-            return true;
-        }
-        else {
+        } else {
             callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR));
             return false;
         }
@@ -71,44 +58,29 @@ public class ImageResizer extends CordovaPlugin {
             TaskParams currentParams = params[0];
             JSONArray args = currentParams.args;
             CallbackContext callbackContext = currentParams.callbackContext;
-            boolean isFileUri = false;
-
             checkParameters(args, callbackContext);
 
             try {
                 // get the arguments
                 JSONObject jsonObject = args.getJSONObject(0);
 
-                uri = jsonObject.getString("uri");
+                String uri = jsonObject.getString("uri");
 
-                isFileUri = !uri.startsWith("data");
-
-                int exifRotation = 0;
-                if(jsonObject.has("exifRotation") && jsonObject.getBoolean("exifRotation")){
+                int exifRotation =  0;
+                if(jsonObject.optBoolean("exifRotation", false)){
                     exifRotation = getExifRotationFromUri(uri);
                 }
 
-                folderName = null;
-                if (jsonObject.has("folderName")) {
-                    folderName = jsonObject.getString("folderName");
-                }
-                fileName = null;
-                if (jsonObject.has("fileName")) {
-                    fileName = jsonObject.getString("fileName");
-                }
-                quality = jsonObject.optInt("quality", 85);
-                width = jsonObject.getInt("width");
-                height = jsonObject.getInt("height");
-                base64 = jsonObject.optBoolean("base64", false);
-                fit = jsonObject.optBoolean("fit", false);
+                String folderName = jsonObject.optString("folderName", null);
+                String fileName = jsonObject.optString("fileName", null);
+                int quality = jsonObject.optInt("quality", 85);
+                int width = jsonObject.getInt("width");
+                int height = jsonObject.getInt("height");
+                boolean base64 = jsonObject.optBoolean("base64", false);
 
-                Bitmap bitmap;
                 // load the image from uri
-                if (isFileUri) {
-                    bitmap = loadScaledBitmapFromUri(uri, width, height);
-                } else {
-                    bitmap = loadBase64ScaledBitmapFromUri(uri, width, height, fit);
-                }
+
+                Bitmap bitmap = loadResizedBitmapFromUri(uri, width, height);
 
                 if(jsonObject.has("exifRotation") && jsonObject.getBoolean("exifRotation")){
                     bitmap = rotateBitmap(bitmap, exifRotation);
@@ -118,13 +90,13 @@ public class ImageResizer extends CordovaPlugin {
 
                 // save the image as jpeg on the device
                 if (!base64) {
-                    Uri scaledFile = saveFile(bitmap);
+                    Uri scaledFile = saveFile(bitmap, folderName, fileName, quality);
                     response = scaledFile.toString();
                 } else {
                     response = getStringImage(bitmap, quality);
                 }
 
-                bitmap = null;
+                bitmap.recycle();
 
                 callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, response));
 
@@ -132,81 +104,6 @@ public class ImageResizer extends CordovaPlugin {
                 callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR,
                         "JSON Exception during ResizeTask : " + e.getMessage()));
                 Log.e("Protonet", "JSON Exception during ResizeTask.");
-
-            } finally {
-                return null;
-            }
-
-        }
-    }
-
-    class RotateFromExifTask extends AsyncTask<TaskParams, String, String> {
-        @Override
-        protected String doInBackground(TaskParams[] params) {
-            TaskParams currentParams = params[0];
-            JSONArray args = currentParams.args;
-            CallbackContext callbackContext = currentParams.callbackContext;
-            boolean isFileUri = false;
-
-            checkParameters(args, callbackContext);
-
-            try {
-                // get the arguments
-                JSONObject jsonObject = args.getJSONObject(0);
-
-                uri = jsonObject.getString("uri");
-
-                isFileUri = !uri.startsWith("data");
-
-                int exifRotation = getExifRotationFromUri(uri);
-
-                Bitmap bitmap;
-                // load the image from uri
-                if (isFileUri) {
-                    BitmapFactory.Options options = new BitmapFactory.Options();
-                    options.inJustDecodeBounds = true;
-                    BitmapFactory.decodeStream(FileHelper.getInputStreamFromUriString(uri, cordova), null, options);
-
-                    options.inJustDecodeBounds = false;
-                    options.inSampleSize = calculateSampleSize(options.outWidth, options.outHeight, width, height);
-                    bitmap = BitmapFactory.decodeStream(FileHelper.getInputStreamFromUriString(uri, cordova), null, options);
-
-                } else {
-                    String pureBase64Encoded = uri.substring(uri.indexOf(",") + 1);
-                    byte[] decodedBytes = Base64.decode(pureBase64Encoded, Base64.DEFAULT);
-
-                    bitmap = BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.length);
-                }
-
-                bitmap = rotateBitmap(bitmap, exifRotation);
-
-                String response;
-
-                folderName = null;
-                if (jsonObject.has("folderName")) {
-                    folderName = jsonObject.getString("folderName");
-                }
-                fileName = null;
-                if (jsonObject.has("fileName")) {
-                    fileName = jsonObject.getString("fileName");
-                }
-                base64 = jsonObject.optBoolean("base64", false);
-                quality = jsonObject.optInt("quality", 85);
-
-                if (!base64) {
-                    Uri scaledFile = saveFile(bitmap);
-                    response = scaledFile.toString();
-                } else {
-                    response = getStringImage(bitmap, quality);
-                }
-
-                bitmap = null;
-                callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, response));
-
-            } catch (JSONException e) {
-                callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR,
-                        "JSON Exception during RotateFromExifTask : " + e.getMessage()));
-                Log.e("Protonet", "JSON Exception during RotateFromExifTask");
             } finally {
                 return null;
             }
@@ -224,53 +121,33 @@ public class ImageResizer extends CordovaPlugin {
         return encodedImage;
     }
 
-    private Bitmap loadBase64ScaledBitmapFromUri(String uriString, int width, int height, boolean fit) {
-        String pureBase64Encoded = uriString.substring(uriString.indexOf(",") + 1);
-        byte[] decodedBytes = Base64.decode(pureBase64Encoded, Base64.DEFAULT);
-
-        Bitmap decodedBitmap = BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.length);
-
-        int sourceWidth = decodedBitmap.getWidth();
-        int sourceHeight = decodedBitmap.getHeight();
-
-        float ratio = sourceWidth > sourceHeight ? ((float) width / sourceWidth) : ((float) height / sourceHeight);
-
-        int execWidth = width;
-        int execHeigth = height;
-
-        if (fit) {
-            execWidth = Math.round(ratio * sourceWidth);
-            execHeigth = Math.round(ratio * sourceHeight);
-        }
-
-        Bitmap scaled = Bitmap.createScaledBitmap(decodedBitmap, execWidth, execHeigth, true);
-
-        decodedBytes = null;
-        decodedBitmap = null;
-
-        return scaled;
-    }
-
-    /**
-     * Loads a Bitmap of the given android uri path
-     *
-     * @params uri the URI who points to the image
-     **/
-    private Bitmap loadScaledBitmapFromUri(String uriString, int width, int height) throws IOException {
+    private Bitmap loadResizedBitmapFromUri(String uri, int width, int height) throws IOException {
 
         BitmapFactory.Options options = new BitmapFactory.Options();
         options.inJustDecodeBounds = true;
-        BitmapFactory.decodeStream(FileHelper.getInputStreamFromUriString(uriString, cordova), null, options);
+        decodeUri(uri, options);
 
         // calc aspect ratio
-        int[] retval = calculateAspectRatio(options.outWidth, options.outHeight);
+        int[] retval = calculateAspectRatio(options.outWidth, options.outHeight, width, height);
 
+        options.inSampleSize = calculateInSampleSize(options, width, height);
         options.inJustDecodeBounds = false;
-        options.inSampleSize = calculateSampleSize(options.outWidth, options.outHeight, width, height);
-        Bitmap unscaledBitmap = BitmapFactory.decodeStream(FileHelper.getInputStreamFromUriString(uriString, cordova),
-                null, options);
+        Bitmap unscaledBitmap =  decodeUri(uri, options);
 
-        return Bitmap.createScaledBitmap(unscaledBitmap, retval[0], retval[1], true);
+        Bitmap scaledBitmap = Bitmap.createScaledBitmap(unscaledBitmap, retval[0], retval[1], true);
+        unscaledBitmap.recycle();
+        return scaledBitmap;
+    }
+
+    private Bitmap decodeUri(String uri, BitmapFactory.Options options) throws IOException{
+        Boolean isBase64 = uri.startsWith("data");
+        if(isBase64){
+            String pureBase64Encoded = uri.substring(uri.indexOf(",") + 1);
+            byte[] decodedBytes = Base64.decode(pureBase64Encoded, Base64.DEFAULT);
+            return BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.length, options);
+        }else{
+            return BitmapFactory.decodeStream(FileHelper.getInputStreamFromUriString(uri, cordova), null, options);
+        }
     }
 
     public static int getExifRotationFromUri(String uriString) throws IOException {
@@ -328,7 +205,7 @@ public class ImageResizer extends CordovaPlugin {
         return bmRotated;
     }
 
-    private Uri saveFile(Bitmap bitmap) throws IOException {
+    private Uri saveFile(Bitmap bitmap, String folderName, String fileName, int quality) throws IOException {
         File folder = null;
         if (folderName == null) {
             folder = new File(this.getTempDirectoryPath());
@@ -366,21 +243,32 @@ public class ImageResizer extends CordovaPlugin {
      * Figure out what ratio we can load our image into memory at while still being bigger than
      * our desired width and height
      *
-     * @param srcWidth
-     * @param srcHeight
-     * @param dstWidth
-     * @param dstHeight
+     * @param options
+     * @param reqWidth
+     * @param reqHeight
      * @return
      */
-    private int calculateSampleSize(int srcWidth, int srcHeight, int dstWidth, int dstHeight) {
-        final float srcAspect = (float) srcWidth / (float) srcHeight;
-        final float dstAspect = (float) dstWidth / (float) dstHeight;
+    private static int calculateInSampleSize(
+            BitmapFactory.Options options, int reqWidth, int reqHeight) {
+        // Raw height and width of image
+        final int height = options.outHeight;
+        final int width = options.outWidth;
+        int inSampleSize = 1;
 
-        if (srcAspect > dstAspect) {
-            return srcWidth / dstWidth;
-        } else {
-            return srcHeight / dstHeight;
+        if (height > reqHeight || width > reqWidth) {
+
+            final int halfHeight = height / 2;
+            final int halfWidth = width / 2;
+
+            // Calculate the largest inSampleSize value that is a power of 2 and keeps both
+            // height and width larger than the requested height and width.
+            while ((halfHeight / inSampleSize) >= reqHeight
+                    && (halfWidth / inSampleSize) >= reqWidth) {
+                inSampleSize *= 2;
+            }
         }
+
+        return inSampleSize;
     }
 
     /**
@@ -390,9 +278,9 @@ public class ImageResizer extends CordovaPlugin {
      * @param origHeight
      * @return
      */
-    private int[] calculateAspectRatio(int origWidth, int origHeight) {
-        int newWidth = width;
-        int newHeight = height;
+    private int[] calculateAspectRatio(int origWidth, int origHeight, int reqWidth, int reqHeight) {
+        int newWidth = reqWidth;
+        int newHeight = reqHeight;
 
         // If no new width or height were specified return the original bitmap
         if (newWidth <= 0 && newHeight <= 0) {
