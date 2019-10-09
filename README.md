@@ -20,6 +20,7 @@ At the moment the plugin is available on android, iOS and windows
   - **width**(Number): The width of the new image,
   - **height**(Number): The height of the new image
   - **base64**(Boolean): Whether or not to return a base64 encoded image string instead of the path to the resized image
+  - **exifRotation**(Boolean): Whether or not to rotate the image according to orientation EXIF **android only**
 
 ### Android Example
 ```
