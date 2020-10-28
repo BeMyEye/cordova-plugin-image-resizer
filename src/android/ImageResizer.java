@@ -26,8 +26,6 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 
-import bolts.Task;
-
 public class ImageResizer extends CordovaPlugin {
   private static final int ARGUMENT_NUMBER = 1;
   private boolean switchWidthAndHeightExifs = false;
