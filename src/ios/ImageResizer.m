@@ -23,7 +23,6 @@ static NSInteger count = 0;
         // get the arguments and the stuff inside of it
         NSDictionary* arguments = [command.arguments objectAtIndex:0];
         NSString* imageUrlString = [arguments objectForKey:@"uri"];
-        NSLog(@"Image Resizer Image URL : %@",imageUrlString);
 
         NSString* quality = [arguments objectForKey:@"quality"];
         CGSize frameSize = CGSizeMake([[arguments objectForKey:@"width"] floatValue], [[arguments objectForKey:@"height"] floatValue]);
@@ -52,7 +51,7 @@ static NSInteger count = 0;
 
         }];
 
-        NSLog(@"image resizer:%@",  (sourceImage ? @"image exists" : @"null" ));
+        // NSLog(@"image resizer:%@",  (sourceImage ? @"image exists" : @"null" ));
 
         UIImage *tempImage = nil;
         CGSize targetSize = frameSize;
@@ -87,7 +86,7 @@ static NSInteger count = 0;
         [sourceImage drawInRect:thumbnailRect];
 
         tempImage = UIGraphicsGetImageFromCurrentImageContext();
-        NSLog(@"image resizer:%@",  (tempImage  ? @"image exsist" : @"null" ));
+        // NSLog(@"image resizer:%@",  (tempImage  ? @"image exsist" : @"null" ));
 
         UIGraphicsEndImageContext();
         NSData *imageData = UIImageJPEGRepresentation(tempImage, [quality floatValue] / 100.0f );
